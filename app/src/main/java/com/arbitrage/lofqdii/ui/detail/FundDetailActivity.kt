@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.view.View
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.arbitrage.lofqdii.R
 import com.arbitrage.lofqdii.data.model.FundType
@@ -81,19 +82,19 @@ class FundDetailActivity : AppCompatActivity() {
             fund.t1PremiumRate?.let { rate ->
                 tvT1Premium.text = fund.displayT1PremiumRate
                 val colorRes = if (rate >= 0) R.color.premium_positive else R.color.premium_negative
-                tvT1Premium.setTextColor(getColor(colorRes))
+                tvT1Premium.setTextColor(ContextCompat.getColor(this@FundDetailActivity, colorRes))
             } ?: run {
                 tvT1Premium.text = "--"
-                tvT1Premium.setTextColor(getColor(R.color.text_secondary))
+                tvT1Premium.setTextColor(ContextCompat.getColor(this@FundDetailActivity, R.color.text_secondary))
             }
 
             fund.realtimePremiumRate?.let { rate ->
                 tvRealtimePremium.text = fund.displayRealtimePremiumRate
                 val colorRes = if (rate >= 0) R.color.premium_positive else R.color.premium_negative
-                tvRealtimePremium.setTextColor(getColor(colorRes))
+                tvRealtimePremium.setTextColor(ContextCompat.getColor(this@FundDetailActivity, colorRes))
             } ?: run {
                 tvRealtimePremium.text = "--"
-                tvRealtimePremium.setTextColor(getColor(R.color.text_secondary))
+                tvRealtimePremium.setTextColor(ContextCompat.getColor(this@FundDetailActivity, R.color.text_secondary))
             }
 
             tvMarketPrice.text = fund.displayMarketPrice
@@ -107,7 +108,7 @@ class FundDetailActivity : AppCompatActivity() {
                 val sign = if (percent >= 0) "+" else ""
                 tvChangePercent.text = "$sign${String.format("%.2f", percent)}%"
                 val colorRes = if (percent >= 0) R.color.rise else R.color.fall
-                tvChangePercent.setTextColor(getColor(colorRes))
+                tvChangePercent.setTextColor(ContextCompat.getColor(this@FundDetailActivity, colorRes))
             } ?: run {
                 tvChangePercent.text = "--"
             }
@@ -126,7 +127,7 @@ class FundDetailActivity : AppCompatActivity() {
                 SubscribeStatus.LIMITED -> R.color.warning
                 SubscribeStatus.UNKNOWN -> R.color.text_secondary
             }
-            tvSubscribeStatus.setTextColor(getColor(statusColor))
+            tvSubscribeStatus.setTextColor(ContextCompat.getColor(this@FundDetailActivity, statusColor))
 
             tvSubscribeLimit.text = fund.displaySubscribeLimit
             tvNavDate.text = fund.navDate ?: "--"

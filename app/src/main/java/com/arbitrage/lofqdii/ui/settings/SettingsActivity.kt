@@ -2,6 +2,7 @@ package com.arbitrage.lofqdii.ui.settings
 
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.arbitrage.lofqdii.R
 import com.arbitrage.lofqdii.data.api.ApiSource
@@ -66,7 +67,7 @@ class SettingsActivity : AppCompatActivity() {
 
         binding.tvApiStatus.visibility = android.view.View.VISIBLE
         binding.tvApiStatus.text = "测试中..."
-        binding.tvApiStatus.setTextColor(getColor(R.color.text_secondary))
+        binding.tvApiStatus.setTextColor(ContextCompat.getColor(this, R.color.text_secondary))
 
         lifecycleScope.launch {
             val isSuccess = apiSwitcher.testApiConnection(source)
@@ -77,7 +78,7 @@ class SettingsActivity : AppCompatActivity() {
                 "连接失败"
             }
             binding.tvApiStatus.setTextColor(
-                getColor(if (isSuccess) R.color.success else R.color.error)
+                ContextCompat.getColor(this@SettingsActivity, if (isSuccess) R.color.success else R.color.error)
             )
         }
     }

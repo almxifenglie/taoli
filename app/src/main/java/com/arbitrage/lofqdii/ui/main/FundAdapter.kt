@@ -5,6 +5,7 @@ import android.view.ViewGroup
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
+import androidx.core.content.ContextCompat
 import com.arbitrage.lofqdii.R
 import com.arbitrage.lofqdii.data.model.Fund
 import com.arbitrage.lofqdii.data.model.SubscribeStatus
@@ -53,20 +54,20 @@ class FundAdapter(
                 if (premiumRate != null) {
                     tvPremiumRate.text = fund.displayT1PremiumRate
                     val colorRes = if (premiumRate >= 0) R.color.premium_positive else R.color.premium_negative
-                    tvPremiumRate.setTextColor(itemView.context.getColor(colorRes))
+                    tvPremiumRate.setTextColor(ContextCompat.getColor(itemView.context, colorRes))
                 } else {
                     tvPremiumRate.text = "--"
-                    tvPremiumRate.setTextColor(itemView.context.getColor(R.color.text_secondary))
+                    tvPremiumRate.setTextColor(ContextCompat.getColor(itemView.context, R.color.text_secondary))
                 }
 
                 val realtimePremium = fund.realtimePremiumRate
                 if (realtimePremium != null) {
                     tvRealtimePremium.text = fund.displayRealtimePremiumRate
                     val colorRes = if (realtimePremium >= 0) R.color.premium_positive else R.color.premium_negative
-                    tvRealtimePremium.setTextColor(itemView.context.getColor(colorRes))
+                    tvRealtimePremium.setTextColor(ContextCompat.getColor(itemView.context, colorRes))
                 } else {
                     tvRealtimePremium.text = "--"
-                    tvRealtimePremium.setTextColor(itemView.context.getColor(R.color.text_secondary))
+                    tvRealtimePremium.setTextColor(ContextCompat.getColor(itemView.context, R.color.text_secondary))
                 }
 
                 val statusText = when (fund.subscribeStatus) {
@@ -83,7 +84,7 @@ class FundAdapter(
                     SubscribeStatus.LIMITED -> R.color.warning
                     SubscribeStatus.UNKNOWN -> R.color.text_secondary
                 }
-                tvSubscribeStatus.setTextColor(itemView.context.getColor(statusColor))
+                tvSubscribeStatus.setTextColor(ContextCompat.getColor(itemView.context, statusColor))
             }
         }
     }
