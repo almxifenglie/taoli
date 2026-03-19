@@ -67,9 +67,7 @@ class MainActivity : AppCompatActivity() {
         val currentFragment = supportFragmentManager.findFragmentByTag(
             "f${binding.viewPager.currentItem}"
         )
-        (currentFragment as? FundListFragment)?.let {
-            it.viewModel.refresh()
-        }
+        (currentFragment as? FundListFragment)?.refresh()
     }
 
     private class ViewPagerAdapter(activity: FragmentActivity) : FragmentStateAdapter(activity) {

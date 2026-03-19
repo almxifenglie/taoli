@@ -24,6 +24,10 @@ class FundListFragment : Fragment() {
     private lateinit var adapter: FundAdapter
     private var fundType: FundType = FundType.LOF
 
+    fun refresh() {
+        viewModel.refresh()
+    }
+
     companion object {
         private const val ARG_FUND_TYPE = "fund_type"
 
