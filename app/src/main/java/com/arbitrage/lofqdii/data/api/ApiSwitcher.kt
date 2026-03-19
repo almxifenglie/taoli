@@ -1,12 +1,12 @@
 package com.arbitrage.lofqdii.data.api
 
+import android.util.Log
 import com.arbitrage.lofqdii.data.model.Fund
 import com.arbitrage.lofqdii.data.model.FundType
 import com.arbitrage.lofqdii.data.model.SubscribeStatus
 import com.arbitrage.lofqdii.data.model.Result
 import com.arbitrage.lofqdii.util.PremiumCalculator
 import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 
 enum class ApiSource(val displayName: String) {
@@ -24,6 +24,8 @@ class ApiSwitcher private constructor() {
     private var currentSource = ApiSource.EASTMONEY
 
     companion object {
+        private const val TAG = "ApiSwitcher"
+
         @Volatile
         private var instance: ApiSwitcher? = null
 
@@ -41,21 +43,17 @@ class ApiSwitcher private constructor() {
     }
 
     suspend fun getLOFList(page: Int = 1, pageSize: Int = 100): Result<List<Fund>> {
-        return when (currentSource) {
-            ApiSource.EASTMONEY -> eastMoneyApi.getLOFList(page, pageSize)
-            else -> eastMoneyApi.getLOFList(page, pageSize)
-        }
+        return eastMoneyApi.getLOFList(page, pageSize)
     }
 
     suspend fun getQDIIList(page: Int = 1, pageSize: Int = 100): Result<List<Fund>> {
-        return when (currentSource) {
-            ApiSource.EASTMONEY -> eastMoneyApi.getQDIIList(page, pageSize)
-            else -> eastMoneyApi.getQDIIList(page, pageSize)
-        }
+        return eastMoneyApi.getQDIIList(page, pageSize)
     }
 
     suspend fun getFundWithPremium(code: String, fundType: FundType): Result<Fund> = coroutineScope {
         try {
+            Log.d(TAG, "Getting fund with premium: $code, type: $fundType")
+
             val priceDeferred = async { eastMoneyApi.getFundDetail(code) }
             val navDeferred = async { tianTianFundApi.getFundNav(code) }
             val estimateNavDeferred = async { tianTianFundApi.getFundEstimateNav(code) }
@@ -67,26 +65,59 @@ class ApiSwitcher private constructor() {
             val subscribeResult = subscribeDeferred.await()
 
             if (priceResult.isError) {
-                return@coroutineScope Result.error(priceResult.getErrorMessage() ?: "获取价格失败")
+                val errorMsg = priceResult.getErrorMessage() ?: "获取价格失败"
+                Log.e(TAG, "Price error for $code: $errorMsg")
+                return@coroutineScope Result.error(errorMsg)
             }
 
             val baseFund = priceResult.getOrNull()!!
-            val nav = navResult.getOrNull()?.first
-            val navDate = navResult.getOrNull()?.second
-            val estimateNav = estimateNavResult.getOrNull()?.first
-            val estimateTime = estimateNavResult.getOrNull()?.second
-            val subscribeStatus = subscribeResult.getOrNull()?.first ?: SubscribeStatus.UNKNOWN
-            val subscribeLimit = subscribeResult.getOrNull()?.second
+            Log.d(TAG, "Got price for $code: ${baseFund.marketPrice}")
+
+            var nav: Double? = null
+            var navDate: String? = null
+            var estimateNav: Double? = null
+            var estimateTime: String? = null
+            var subscribeStatus = SubscribeStatus.UNKNOWN
+            var subscribeLimit: Double? = null
+
+            navResult.getOrNull()?.let {
+                nav = it.first
+                navDate = it.second
+                Log.d(TAG, "Got nav for $code: $nav")
+            }
+            if (navResult.isError) {
+                Log.w(TAG, "Nav error for $code: ${navResult.getErrorMessage()}")
+            }
+
+            estimateNavResult.getOrNull()?.let {
+                estimateNav = it.first
+                estimateTime = it.second
+                Log.d(TAG, "Got estimateNav for $code: $estimateNav")
+            }
+            if (estimateNavResult.isError) {
+                Log.w(TAG, "EstimateNav error for $code: ${estimateNavResult.getErrorMessage()}")
+            }
+
+            subscribeResult.getOrNull()?.let {
+                subscribeStatus = it.first
+                subscribeLimit = it.second
+                Log.d(TAG, "Got subscribeStatus for $code: $subscribeStatus, limit: $subscribeLimit")
+            }
+            if (subscribeResult.isError) {
+                Log.w(TAG, "SubscribeStatus error for $code: ${subscribeResult.getErrorMessage()}")
+            }
 
             val t1PremiumRate = PremiumCalculator.calculateT1PremiumRate(
                 baseFund.marketPrice,
                 nav
             )
+            Log.d(TAG, "T-1 premium for $code: $t1PremiumRate")
 
             val realtimePremiumRate = PremiumCalculator.calculateRealtimePremiumRate(
                 baseFund.marketPrice,
-                estimateNav
+                estimateNav ?: nav
             )
+            Log.d(TAG, "Realtime premium for $code: $realtimePremiumRate")
 
             val fund = baseFund.copy(
                 type = fundType,
@@ -102,41 +133,9 @@ class ApiSwitcher private constructor() {
 
             Result.success(fund)
         } catch (e: Exception) {
+            Log.e(TAG, "getFundWithPremium error for $code: ${e.message}", e)
             Result.error("获取基金数据失败: ${e.message}", e)
         }
-    }
-
-    suspend fun enrichFunds(funds: List<Fund>): List<Fund> = coroutineScope {
-        funds.map { fund ->
-            async {
-                val result = getFundWithPremium(fund.code, fund.type)
-                result.getOrNull() ?: fund
-            }
-        }.awaitAll()
-    }
-
-    suspend fun getFundListWithPremium(
-        fundType: FundType,
-        page: Int = 1,
-        pageSize: Int = 100
-    ): Result<List<Fund>> {
-        val listResult = if (fundType == FundType.LOF) {
-            getLOFList(page, pageSize)
-        } else {
-            getQDIIList(page, pageSize)
-        }
-
-        if (listResult.isError) {
-            return listResult
-        }
-
-        val funds = listResult.getOrNull() ?: return Result.error("获取列表失败")
-        
-        val enrichedFunds = funds.take(30).map { fund ->
-            getFundWithPremium(fund.code, fundType).getOrNull() ?: fund
-        }
-
-        return Result.success(enrichedFunds)
     }
 
     suspend fun testApiConnection(source: ApiSource): Boolean {
@@ -156,6 +155,7 @@ class ApiSwitcher private constructor() {
                 }
             }
         } catch (e: Exception) {
+            Log.e(TAG, "API test error: ${e.message}")
             false
         }
     }
