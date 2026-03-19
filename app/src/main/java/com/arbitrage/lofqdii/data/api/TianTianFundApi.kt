@@ -1,8 +1,6 @@
 package com.arbitrage.lofqdii.data.api
 
 import android.util.Log
-import com.arbitrage.lofqdii.data.model.Fund
-import com.arbitrage.lofqdii.data.model.FundType
 import com.arbitrage.lofqdii.data.model.SubscribeStatus
 import com.arbitrage.lofqdii.data.model.Result
 import com.google.gson.Gson
@@ -11,6 +9,16 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.util.concurrent.TimeUnit
+
+data class TianTianFundInfo(
+    val fundcode: String = "",
+    val name: String = "",
+    val jzrq: String = "",
+    val dwjz: String = "",
+    val gsz: String = "",
+    val gszzl: String = "",
+    val gztime: String = ""
+)
 
 class TianTianFundApi private constructor() {
 
@@ -34,12 +42,10 @@ class TianTianFundApi private constructor() {
             }
         }
     }
-    }
 
     suspend fun getFundEstimate(code: String): Result<TianTianFundInfo> = withContext(Dispatchers.IO) {
         try {
             val url = "https://fundgz.1234567.com.cn/js/$code.js"
-
             Log.d(TAG, "Requesting: $url")
 
             val request = Request.Builder()
@@ -139,7 +145,6 @@ class TianTianFundApi private constructor() {
     suspend fun getSubscribeStatus(code: String): Result<Pair<SubscribeStatus, Double?>> = withContext(Dispatchers.IO) {
         try {
             val url = "https://fund.eastmoney.com/Fund_sgzt_$code.html"
-
             Log.d(TAG, "Requesting subscribe status: $url")
 
             val request = Request.Builder()
