@@ -7,7 +7,6 @@ import com.arbitrage.lofqdii.data.model.Result
 import com.google.gson.Gson
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
-import com.google.gson.annotations.SerializedName
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -38,11 +37,21 @@ class EastMoneyApi private constructor() {
     }
 
     suspend fun getLOFList(page: Int = 1, pageSize: Int = 100): Result<List<Fund>> {
-        return fetchFundList("m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23", FundType.LOF, page, pageSize)
+        return fetchFundList(
+            "b:MK0404",
+            FundType.LOF,
+            page,
+            pageSize
+        )
     }
 
     suspend fun getQDIIList(page: Int = 1, pageSize: Int = 100): Result<List<Fund>> {
-        return fetchFundList("m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23", FundType.QDII, page, pageSize)
+        return fetchFundList(
+            "b:MK0405",
+            FundType.QDII,
+            page,
+            pageSize
+        )
     }
 
     private suspend fun fetchFundList(
@@ -55,12 +64,16 @@ class EastMoneyApi private constructor() {
             val fields = "f12,f14,f2,f3,f4,f5,f6,f15,f16,f17,f18"
             val url = buildString {
                 append("$BASE_URL/api/qt/clist/get")
-                append("?fs=$fs")
-                append("&fields=$fields")
+                append("?cb=json")
                 append("&pn=$page")
                 append("&pz=$pageSize")
-                append("&ut=fa5fd1943c7b386f172d6893dbfba10b")
-                append("&secid=0.000001")
+                append("&po=1")
+                append("&np=1")
+                append("&fltt=2")
+                append("&invt=2")
+                append("&fid=f3")
+                append("&fs=$fs")
+                append("&fields=$fields")
             }
 
             val request = Request.Builder()
@@ -96,42 +109,40 @@ class EastMoneyApi private constructor() {
         val funds = mutableListOf<Fund>()
         
         try {
-            val jsonResponse = gson.fromJson(body, JsonObject::class.java)
+            var jsonStr = body
+            if (jsonStr.contains("json(")) {
+                jsonStr = jsonStr.substringAfter("json(").substringBeforeLast(")")
+            }
+            
+            val jsonResponse = gson.fromJson(jsonStr, JsonObject::class.java)
             
             if (jsonResponse.has("data") && !jsonResponse.get("data").isJsonNull) {
-                val dataElement = jsonResponse.get("data")
+                val dataObj = jsonResponse.getAsJsonObject("data")
                 
-                val diffArray: JsonArray? = when {
-                    dataElement.isJsonObject -> {
-                        val dataObj = dataElement.asJsonObject
-                        if (dataObj.has("diff") && !dataObj.get("diff").isJsonNull) {
-                            dataObj.getAsJsonArray("diff")
-                        } else null
-                    }
-                    dataElement.isJsonArray -> dataElement.asJsonArray
-                    else -> null
-                }
+                if (dataObj.has("diff") && !dataObj.get("diff").isJsonNull) {
+                    val diffArray = dataObj.getAsJsonArray("diff")
 
-                diffArray?.forEach { item ->
-                    try {
-                        val obj = item.asJsonObject
-                        val code = obj.get("f12")?.asString ?: ""
-                        val name = obj.get("f14")?.asString ?: ""
-                        
-                        if (code.isNotEmpty() && name.isNotEmpty()) {
-                            funds.add(Fund(
-                                code = code,
-                                name = name,
-                                type = fundType,
-                                marketPrice = obj.get("f2")?.takeIf { !it.isJsonNull }?.asDouble,
-                                changePercent = obj.get("f3")?.takeIf { !it.isJsonNull }?.asDouble,
-                                volume = obj.get("f5")?.takeIf { !it.isJsonNull }?.asLong,
-                                amount = obj.get("f6")?.takeIf { !it.isJsonNull }?.asDouble,
-                                updateTime = System.currentTimeMillis().toString()
-                            ))
+                    diffArray.forEach { item ->
+                        try {
+                            val obj = item.asJsonObject
+                            val code = obj.get("f12")?.asString ?: ""
+                            val name = obj.get("f14")?.asString ?: ""
+                            
+                            if (code.isNotEmpty() && name.isNotEmpty()) {
+                                funds.add(Fund(
+                                    code = code,
+                                    name = name,
+                                    type = fundType,
+                                    marketPrice = obj.get("f2")?.takeIf { !it.isJsonNull }?.asDouble,
+                                    changePercent = obj.get("f3")?.takeIf { !it.isJsonNull }?.asDouble,
+                                    volume = obj.get("f5")?.takeIf { !it.isJsonNull }?.asLong,
+                                    amount = obj.get("f6")?.takeIf { !it.isJsonNull }?.asDouble,
+                                    updateTime = System.currentTimeMillis().toString()
+                                ))
+                            }
+                        } catch (e: Exception) {
+                            // Skip invalid items
                         }
-                    } catch (e: Exception) {
-                        // Skip invalid items
                     }
                 }
             }
