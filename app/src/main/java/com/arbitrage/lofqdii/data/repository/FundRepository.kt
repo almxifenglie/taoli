@@ -16,19 +16,26 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 
 class FundRepository private constructor() {
 
     private val apiSwitcher = ApiSwitcher.getInstance()
     private val eastMoneyApi = EastMoneyApi.getInstance()
     private val tianTianFundApi = TianTianFundApi.getInstance()
-
+    
+    private val concurrencySemaphore = Semaphore(5)
+    
     companion object {
         private const val TAG = "FundRepository"
+        private const val MAX_RETRY_COUNT = 2
+        private const val RETRY_DELAY_MS = 500L
 
         @Volatile
         private var instance: FundRepository? = null
@@ -109,7 +116,7 @@ class FundRepository private constructor() {
     }
 
     suspend fun getFundDetail(code: String, fundType: FundType): Result<Fund> {
-        val result = apiSwitcher.getFundWithPremium(code, fundType)
+        val result = getFundWithPremiumWithRetry(code, fundType)
         if (result.isError) {
             return Result.error(result.getErrorMessage() ?: "获取失败")
         }
@@ -119,7 +126,32 @@ class FundRepository private constructor() {
     }
 
     suspend fun getFundDetailWithSource(code: String, fundType: FundType): Result<FundDataResult> {
-        return apiSwitcher.getFundWithPremium(code, fundType)
+        return getFundWithPremiumWithRetry(code, fundType)
+    }
+
+    private suspend fun getFundWithPremiumWithRetry(code: String, fundType: FundType): Result<FundDataResult> {
+        var lastError: String? = null
+        
+        repeat(MAX_RETRY_COUNT + 1) { attempt ->
+            val result = apiSwitcher.getFundWithPremium(code, fundType)
+            
+            if (result.isSuccess) {
+                if (attempt > 0) {
+                    DebugLogger.i("[$code] 第${attempt + 1}次尝试成功")
+                }
+                return result
+            }
+            
+            lastError = result.getErrorMessage()
+            DebugLogger.w("[$code] 第${attempt + 1}次尝试失败: $lastError")
+            
+            if (attempt < MAX_RETRY_COUNT) {
+                delay(RETRY_DELAY_MS)
+            }
+        }
+        
+        DebugLogger.e("[$code] 所有重试均失败: $lastError")
+        return Result.error(lastError ?: "获取数据失败")
     }
 
     fun getLOFFundListFlow(
@@ -143,33 +175,35 @@ class FundRepository private constructor() {
     }.flowOn(Dispatchers.IO)
 
     private suspend fun enrichFundList(funds: List<Fund>): List<Fund> = coroutineScope {
-        DebugLogger.i("开始增强 ${funds.size} 只基金数据...")
+        DebugLogger.i("开始增强 ${funds.size} 只基金数据，并发数=5...")
         
         funds.mapIndexed { index, fund ->
             async {
-                try {
-                    DebugLogger.d("[${fund.code}] 开始获取详情数据 (${index + 1}/${funds.size})")
-                    val enrichedResult = apiSwitcher.getFundWithPremium(fund.code, fund.type)
-                    
-                    if (enrichedResult.isSuccess) {
-                        val dataResult = enrichedResult.getOrNull()!!
-                        val enrichedFund = dataResult.fund.copy(name = fund.name)
+                concurrencySemaphore.withPermit {
+                    try {
+                        DebugLogger.d("[${fund.code}] 开始获取详情数据 (${index + 1}/${funds.size})")
+                        val enrichedResult = getFundWithPremiumWithRetry(fund.code, fund.type)
                         
-                        DebugLogger.logDataResult(
-                            fund.code,
-                            dataResult.priceSource?.let { "${if (it.success) "成功" else "失败"}(${it.name})" },
-                            dataResult.navSource?.let { "${if (it.success) "成功" else "失败"}(${it.name})" },
-                            dataResult.subscribeSource?.let { "${if (it.success) "成功" else "失败"}(${it.name})" }
-                        )
-                        
-                        enrichedFund
-                    } else {
-                        DebugLogger.e("[${fund.code}] 获取详情失败: ${enrichedResult.getErrorMessage()}")
+                        if (enrichedResult.isSuccess) {
+                            val dataResult = enrichedResult.getOrNull()!!
+                            val enrichedFund = dataResult.fund.copy(name = fund.name)
+                            
+                            DebugLogger.logDataResult(
+                                fund.code,
+                                dataResult.priceSource?.let { "${if (it.success) "成功" else "失败"}(${it.name})" },
+                                dataResult.navSource?.let { "${if (it.success) "成功" else "失败"}(${it.name})" },
+                                dataResult.subscribeSource?.let { "${if (it.success) "成功" else "失败"}(${it.name})" }
+                            )
+                            
+                            enrichedFund
+                        } else {
+                            DebugLogger.e("[${fund.code}] 获取详情失败: ${enrichedResult.getErrorMessage()}")
+                            fund
+                        }
+                    } catch (e: Exception) {
+                        DebugLogger.e("[${fund.code}] 处理异常: ${e.message}", e)
                         fund
                     }
-                } catch (e: Exception) {
-                    DebugLogger.e("[${fund.code}] 处理异常: ${e.message}", e)
-                    fund
                 }
             }
         }.awaitAll().also {
