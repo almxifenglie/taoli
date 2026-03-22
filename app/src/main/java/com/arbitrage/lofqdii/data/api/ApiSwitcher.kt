@@ -7,8 +7,8 @@ import com.arbitrage.lofqdii.data.model.SubscribeStatus
 import com.arbitrage.lofqdii.data.model.Result
 import com.arbitrage.lofqdii.util.PremiumCalculator
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.selects.select
 
 enum class ApiSource(val displayName: String) {
     EASTMONEY("东方财富"),
@@ -93,208 +93,132 @@ class ApiSwitcher private constructor() {
             val priceKlineDeferred = async {
                 Log.d(TAG, "[$code] 开始请求东方财富K线价格...")
                 val result = eastMoneyApi.getLOFPriceByKline(code)
-                result to "EastMoney_Kline"
+                Pair(result, "EastMoney_Kline")
             }
 
             val priceSinaDeferred = async {
                 Log.d(TAG, "[$code] 开始请求新浪价格...")
                 val result = sinaFinanceApi.getFundPriceOnly(code)
-                result to "Sina"
+                Pair(result, "Sina")
             }
 
             val navTianTianDeferred = async {
                 Log.d(TAG, "[$code] 开始请求天天基金净值...")
                 val result = tianTianFundApi.getFundNav(code)
-                result to "TianTian"
+                Pair(result, "TianTian")
             }
 
             val navEastMoneyDeferred = async {
                 Log.d(TAG, "[$code] 开始请求东方财富净值...")
                 val result = eastMoneyApi.getFundNavFromDetail(code)
-                result to "EastMoney"
+                Pair(result, "EastMoney")
             }
 
             val estimateNavTianTianDeferred = async {
                 Log.d(TAG, "[$code] 开始请求天天基金估算净值...")
                 val result = tianTianFundApi.getFundEstimateNav(code)
-                result to "TianTian"
+                Pair(result, "TianTian")
             }
 
             val estimateNavEastMoneyDeferred = async {
                 Log.d(TAG, "[$code] 开始请求东方财富估算净值...")
                 val result = eastMoneyApi.getFundEstimateNavFromApi(code)
-                result to "EastMoney"
+                Pair(result, "EastMoney")
             }
 
             val subscribeF10Deferred = async {
                 Log.d(TAG, "[$code] 开始请求fundf10申购状态...")
                 val result = eastMoneyApi.getSubscribeStatusFromF10(code)
-                result to "EastMoney_F10"
+                Pair(result, "EastMoney_F10")
             }
 
-            Log.d(TAG, "[$code] 等待价格数据返回 (K线 vs 新浪)...")
+            Log.d(TAG, "[$code] 等待所有数据返回...")
             
-            select<Unit> {
-                priceKlineDeferred.onAwait { (result, source) ->
-                    if (result.isSuccess) {
-                        val data = result.getOrNull()!!
-                        price = data.first
-                        volume = data.second
-                        amount = data.third
-                        priceSource = DataSourceInfo(source, true)
-                        Log.d(TAG, "[$code] 东方财富K线价格成功: price=$price, volume=$volume")
-                    } else {
-                        Log.w(TAG, "[$code] 东方财富K线价格失败: ${result.getErrorMessage()}")
-                        priceSource = DataSourceInfo(source, false, result.getErrorMessage())
-                    }
-                }
-                priceSinaDeferred.onAwait { (result, source) ->
-                    if (result.isSuccess && price == null) {
-                        price = result.getOrNull()
-                        priceSource = DataSourceInfo(source, true)
-                        Log.d(TAG, "[$code] 新浪价格成功: price=$price")
-                    } else if (result.isError && priceSource == null) {
-                        Log.w(TAG, "[$code] 新浪价格失败: ${result.getErrorMessage()}")
-                    }
-                }
-            }
-
-            if (price == null) {
-                Log.d(TAG, "[$code] 等待另一个价格数据源...")
-                val (result, source) = if (priceKlineDeferred.isCompleted) {
-                    priceSinaDeferred.await()
-                } else {
-                    priceKlineDeferred.await()
-                }
-                
-                if (result.isSuccess) {
-                    if (result.getOrNull() is Triple<*, *, *>) {
-                        val data = result.getOrNull() as Triple<Double?, Long?, Double?>
-                        price = data.first
-                        volume = data.second
-                        amount = data.third
-                    } else {
-                        price = result.getOrNull()
-                    }
-                    priceSource = DataSourceInfo(source, true)
-                    Log.d(TAG, "[$code] 备用价格源成功: price=$price")
-                } else {
-                    priceSource = DataSourceInfo(source, false, result.getErrorMessage())
-                    Log.e(TAG, "[$code] 备用价格源失败: ${result.getErrorMessage()}")
-                }
-            }
-
-            Log.d(TAG, "[$code] 等待净值数据返回 (天天基金 vs 东方财富)...")
+            val priceKlineResult = priceKlineDeferred.await()
+            val priceSinaResult = priceSinaDeferred.await()
             
-            select<Unit> {
-                navTianTianDeferred.onAwait { (result, source) ->
-                    if (result.isSuccess) {
-                        val data = result.getOrNull()!!
-                        nav = data.first
-                        navDate = data.second
-                        navSource = DataSourceInfo(source, true)
-                        Log.d(TAG, "[$code] 天天基金净值成功: nav=$nav, date=$navDate")
-                    } else {
-                        Log.w(TAG, "[$code] 天天基金净值失败: ${result.getErrorMessage()}")
-                        navSource = DataSourceInfo(source, false, result.getErrorMessage())
-                    }
-                }
-                navEastMoneyDeferred.onAwait { (result, source) ->
-                    if (result.isSuccess && nav == null) {
-                        val data = result.getOrNull()!!
-                        nav = data.first
-                        navDate = data.second
-                        navSource = DataSourceInfo(source, true)
-                        Log.d(TAG, "[$code] 东方财富净值成功: nav=$nav, date=$navDate")
-                    } else if (result.isError && navSource == null) {
-                        Log.w(TAG, "[$code] 东方财富净值失败: ${result.getErrorMessage()}")
-                    }
-                }
+            if (priceKlineResult.first.isSuccess) {
+                val data = priceKlineResult.first.getOrNull()!!
+                price = data.first
+                volume = data.second
+                amount = data.third
+                priceSource = DataSourceInfo(priceKlineResult.second, true)
+                Log.d(TAG, "[$code] 东方财富K线价格成功: price=$price, volume=$volume")
+            } else {
+                Log.w(TAG, "[$code] 东方财富K线价格失败: ${priceKlineResult.first.getErrorMessage()}")
             }
 
-            if (nav == null) {
-                Log.d(TAG, "[$code] 等待另一个净值数据源...")
-                val (result, source) = if (navTianTianDeferred.isCompleted) {
-                    navEastMoneyDeferred.await()
-                } else {
-                    navTianTianDeferred.await()
-                }
-                
-                if (result.isSuccess) {
-                    val data = result.getOrNull()!!
-                    nav = data.first
-                    navDate = data.second
-                    navSource = DataSourceInfo(source, true)
-                    Log.d(TAG, "[$code] 备用净值源成功: nav=$nav")
-                } else {
-                    if (navSource == null) {
-                        navSource = DataSourceInfo(source, false, result.getErrorMessage())
-                    }
-                    Log.e(TAG, "[$code] 备用净值源失败: ${result.getErrorMessage()}")
-                }
+            if (price == null && priceSinaResult.first.isSuccess) {
+                price = priceSinaResult.first.getOrNull()
+                priceSource = DataSourceInfo(priceSinaResult.second, true)
+                Log.d(TAG, "[$code] 新浪价格成功: price=$price")
+            } else if (price == null) {
+                priceSource = DataSourceInfo(priceSinaResult.second, false, priceSinaResult.first.getErrorMessage())
+                Log.w(TAG, "[$code] 新浪价格失败: ${priceSinaResult.first.getErrorMessage()}")
             }
 
-            Log.d(TAG, "[$code] 等待估算净值数据返回...")
-            
-            select<Unit> {
-                estimateNavTianTianDeferred.onAwait { (result, source) ->
-                    if (result.isSuccess) {
-                        val data = result.getOrNull()!!
-                        estimateNav = data.first
-                        estimateTime = data.second
-                        estimateNavSource = DataSourceInfo(source, true)
-                        Log.d(TAG, "[$code] 天天基金估算净值成功: estimateNav=$estimateNav")
-                    } else {
-                        Log.w(TAG, "[$code] 天天基金估算净值失败: ${result.getErrorMessage()}")
-                        estimateNavSource = DataSourceInfo(source, false, result.getErrorMessage())
-                    }
-                }
-                estimateNavEastMoneyDeferred.onAwait { (result, source) ->
-                    if (result.isSuccess && estimateNav == null) {
-                        val data = result.getOrNull()!!
-                        estimateNav = data.first
-                        estimateTime = data.second
-                        estimateNavSource = DataSourceInfo(source, true)
-                        Log.d(TAG, "[$code] 东方财富估算净值成功: estimateNav=$estimateNav")
-                    } else if (result.isError && estimateNavSource == null) {
-                        Log.w(TAG, "[$code] 东方财富估算净值失败: ${result.getErrorMessage()}")
-                    }
-                }
+            val navTianTianResult = navTianTianDeferred.await()
+            val navEastMoneyResult = navEastMoneyDeferred.await()
+
+            if (navTianTianResult.first.isSuccess) {
+                val data = navTianTianResult.first.getOrNull()!!
+                nav = data.first
+                navDate = data.second
+                navSource = DataSourceInfo(navTianTianResult.second, true)
+                Log.d(TAG, "[$code] 天天基金净值成功: nav=$nav, date=$navDate")
+            } else {
+                Log.w(TAG, "[$code] 天天基金净值失败: ${navTianTianResult.first.getErrorMessage()}")
             }
 
-            if (estimateNav == null) {
-                Log.d(TAG, "[$code] 等待另一个估算净值数据源...")
-                val (result, source) = if (estimateNavTianTianDeferred.isCompleted) {
-                    estimateNavEastMoneyDeferred.await()
-                } else {
-                    estimateNavTianTianDeferred.await()
+            if (nav == null && navEastMoneyResult.first.isSuccess) {
+                val data = navEastMoneyResult.first.getOrNull()!!
+                nav = data.first
+                navDate = data.second
+                navSource = DataSourceInfo(navEastMoneyResult.second, true)
+                Log.d(TAG, "[$code] 东方财富净值成功: nav=$nav, date=$navDate")
+            } else if (nav == null) {
+                if (navSource == null) {
+                    navSource = DataSourceInfo(navEastMoneyResult.second, false, navEastMoneyResult.first.getErrorMessage())
                 }
-                
-                if (result.isSuccess) {
-                    val data = result.getOrNull()!!
-                    estimateNav = data.first
-                    estimateTime = data.second
-                    estimateNavSource = DataSourceInfo(source, true)
-                    Log.d(TAG, "[$code] 备用估算净值源成功: estimateNav=$estimateNav")
-                } else {
-                    if (estimateNavSource == null) {
-                        estimateNavSource = DataSourceInfo(source, false, result.getErrorMessage())
-                    }
-                    Log.e(TAG, "[$code] 备用估算净值源失败: ${result.getErrorMessage()}")
-                }
+                Log.e(TAG, "[$code] 所有净值源失败")
             }
 
-            Log.d(TAG, "[$code] 等待申购状态数据...")
-            val (subscribeResult, subscribeSource) = subscribeF10Deferred.await()
-            if (subscribeResult.isSuccess) {
-                val data = subscribeResult.getOrNull()!!
+            val estimateNavTianTianResult = estimateNavTianTianDeferred.await()
+            val estimateNavEastMoneyResult = estimateNavEastMoneyDeferred.await()
+
+            if (estimateNavTianTianResult.first.isSuccess) {
+                val data = estimateNavTianTianResult.first.getOrNull()!!
+                estimateNav = data.first
+                estimateTime = data.second
+                estimateNavSource = DataSourceInfo(estimateNavTianTianResult.second, true)
+                Log.d(TAG, "[$code] 天天基金估算净值成功: estimateNav=$estimateNav")
+            } else {
+                Log.w(TAG, "[$code] 天天基金估算净值失败: ${estimateNavTianTianResult.first.getErrorMessage()}")
+            }
+
+            if (estimateNav == null && estimateNavEastMoneyResult.first.isSuccess) {
+                val data = estimateNavEastMoneyResult.first.getOrNull()!!
+                estimateNav = data.first
+                estimateTime = data.second
+                estimateNavSource = DataSourceInfo(estimateNavEastMoneyResult.second, true)
+                Log.d(TAG, "[$code] 东方财富估算净值成功: estimateNav=$estimateNav")
+            } else if (estimateNav == null) {
+                if (estimateNavSource == null) {
+                    estimateNavSource = DataSourceInfo(estimateNavEastMoneyResult.second, false, estimateNavEastMoneyResult.first.getErrorMessage())
+                }
+                Log.e(TAG, "[$code] 所有估算净值源失败")
+            }
+
+            val subscribeResult = subscribeF10Deferred.await()
+            if (subscribeResult.first.isSuccess) {
+                val data = subscribeResult.first.getOrNull()!!
                 subscribeStatus = data.first
                 subscribeLimit = data.second
-                subscribeSourceInfo = DataSourceInfo(subscribeSource, true)
+                subscribeSourceInfo = DataSourceInfo(subscribeResult.second, true)
                 Log.d(TAG, "[$code] 申购状态成功: status=$subscribeStatus, limit=$subscribeLimit")
             } else {
-                subscribeSourceInfo = DataSourceInfo(subscribeSource, false, subscribeResult.getErrorMessage())
-                Log.e(TAG, "[$code] 申购状态失败: ${subscribeResult.getErrorMessage()}")
+                subscribeSourceInfo = DataSourceInfo(subscribeResult.second, false, subscribeResult.first.getErrorMessage())
+                Log.e(TAG, "[$code] 申购状态失败: ${subscribeResult.first.getErrorMessage()}")
             }
 
             val t1PremiumRate = PremiumCalculator.calculateT1PremiumRate(price, nav)
