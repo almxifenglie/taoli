@@ -1,5 +1,6 @@
 package com.arbitrage.lofqdii.ui.main
 
+import android.util.Log
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
@@ -9,6 +10,7 @@ import com.arbitrage.lofqdii.data.model.Fund
 import com.arbitrage.lofqdii.data.model.FundType
 import com.arbitrage.lofqdii.data.model.Result
 import com.arbitrage.lofqdii.data.repository.FundRepository
+import com.arbitrage.lofqdii.util.DebugLogger
 import kotlinx.coroutines.launch
 
 class FundListViewModel : ViewModel() {
@@ -43,11 +45,19 @@ class FundListViewModel : ViewModel() {
     fun loadFunds() {
         viewModelScope.launch {
             _funds.value = Result.loading()
+            DebugLogger.i("开始加载${if (currentFundType == FundType.LOF) "LOF" else "QDII"}基金列表")
             
             val result = if (currentFundType == FundType.LOF) {
                 repository.getLOFFundList(1, 50, true)
             } else {
                 repository.getQDIIFundList(1, 50, true)
+            }
+            
+            if (result.isSuccess) {
+                val fundCount = result.getOrNull()?.size ?: 0
+                DebugLogger.i("成功加载 $fundCount 只基金")
+            } else {
+                DebugLogger.e("加载失败: ${result.getErrorMessage()}")
             }
             
             _funds.value = result
@@ -57,8 +67,17 @@ class FundListViewModel : ViewModel() {
     fun refresh() {
         viewModelScope.launch {
             _isRefreshing.value = true
+            DebugLogger.i("刷新${if (currentFundType == FundType.LOF) "LOF" else "QDII"}基金列表")
             
             val result = repository.refreshFundList(currentFundType)
+            
+            if (result.isSuccess) {
+                val fundCount = result.getOrNull()?.size ?: 0
+                DebugLogger.i("刷新成功，共 $fundCount 只基金")
+            } else {
+                DebugLogger.e("刷新失败: ${result.getErrorMessage()}")
+            }
+            
             _funds.value = result
             _isRefreshing.value = false
         }

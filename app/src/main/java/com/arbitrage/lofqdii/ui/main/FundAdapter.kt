@@ -44,7 +44,7 @@ class FundAdapter(
         fun bind(fund: Fund) {
             binding.apply {
                 tvFundCode.text = fund.code
-                tvFundName.text = fund.name
+                tvFundName.text = fund.name.ifEmpty { "加载中..." }
                 tvMarketPrice.text = fund.displayMarketPrice
                 tvNav.text = fund.displayNav
                 tvVolume.text = fund.displayVolume
@@ -85,6 +85,18 @@ class FundAdapter(
                     SubscribeStatus.UNKNOWN -> R.color.text_secondary
                 }
                 tvSubscribeStatus.setTextColor(ContextCompat.getColor(itemView.context, statusColor))
+
+                if (fund.marketPrice == null) {
+                    tvMarketPrice.setTextColor(ContextCompat.getColor(itemView.context, R.color.error))
+                } else {
+                    tvMarketPrice.setTextColor(ContextCompat.getColor(itemView.context, R.color.text_primary))
+                }
+
+                if (fund.nav == null) {
+                    tvNav.setTextColor(ContextCompat.getColor(itemView.context, R.color.error))
+                } else {
+                    tvNav.setTextColor(ContextCompat.getColor(itemView.context, R.color.text_primary))
+                }
             }
         }
     }

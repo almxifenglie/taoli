@@ -1,6 +1,7 @@
 package com.arbitrage.lofqdii.ui.settings
 
 import android.os.Bundle
+import android.view.View
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
@@ -8,6 +9,9 @@ import com.arbitrage.lofqdii.R
 import com.arbitrage.lofqdii.data.api.ApiSource
 import com.arbitrage.lofqdii.data.api.ApiSwitcher
 import com.arbitrage.lofqdii.databinding.ActivitySettingsBinding
+import com.arbitrage.lofqdii.util.DebugLogger
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
 
 class SettingsActivity : AppCompatActivity() {
@@ -23,6 +27,7 @@ class SettingsActivity : AppCompatActivity() {
         setupToolbar()
         setupApiSourceSelection()
         setupApiTest()
+        setupDebugSection()
     }
 
     private fun setupToolbar() {
@@ -38,6 +43,7 @@ class SettingsActivity : AppCompatActivity() {
             ApiSource.EASTMONEY -> binding.rbEastMoney.isChecked = true
             ApiSource.TIANTIAN -> binding.rbTianTian.isChecked = true
             ApiSource.SINA -> binding.rbSina.isChecked = true
+            ApiSource.COMBINED -> binding.rbCombined.isChecked = true
         }
 
         binding.rgApiSource.setOnCheckedChangeListener { _, checkedId ->
@@ -45,7 +51,8 @@ class SettingsActivity : AppCompatActivity() {
                 R.id.rbEastMoney -> ApiSource.EASTMONEY
                 R.id.rbTianTian -> ApiSource.TIANTIAN
                 R.id.rbSina -> ApiSource.SINA
-                else -> ApiSource.EASTMONEY
+                R.id.rbCombined -> ApiSource.COMBINED
+                else -> ApiSource.COMBINED
             }
             apiSwitcher.setSource(source)
         }
@@ -53,33 +60,61 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun setupApiTest() {
         binding.btnTestApi.setOnClickListener {
-            testCurrentApi()
+            testAllApis()
         }
     }
 
-    private fun testCurrentApi() {
-        val source = when (binding.rgApiSource.checkedRadioButtonId) {
-            R.id.rbEastMoney -> ApiSource.EASTMONEY
-            R.id.rbTianTian -> ApiSource.TIANTIAN
-            R.id.rbSina -> ApiSource.SINA
-            else -> ApiSource.EASTMONEY
-        }
-
-        binding.tvApiStatus.visibility = android.view.View.VISIBLE
-        binding.tvApiStatus.text = "测试中..."
+    private fun testAllApis() {
+        binding.tvApiStatus.visibility = View.VISIBLE
+        binding.tvApiStatus.text = "测试所有API..."
         binding.tvApiStatus.setTextColor(ContextCompat.getColor(this, R.color.text_secondary))
 
         lifecycleScope.launch {
-            val isSuccess = apiSwitcher.testApiConnection(source)
+            val results = listOf(
+                async { "东方财富" to apiSwitcher.testApiConnection(ApiSource.EASTMONEY) },
+                async { "天天基金" to apiSwitcher.testApiConnection(ApiSource.TIANTIAN) },
+                async { "新浪财经" to apiSwitcher.testApiConnection(ApiSource.SINA) }
+            ).awaitAll()
 
-            binding.tvApiStatus.text = if (isSuccess) {
-                "连接成功"
-            } else {
-                "连接失败"
+            val statusBuilder = StringBuilder()
+            results.forEach { (name, success) ->
+                val status = if (success) "成功" else "失败"
+                val color = if (success) "绿色" else "红色"
+                statusBuilder.append("$name: $status\n")
+                DebugLogger.i("API测试: $name - $status")
             }
+
+            binding.tvApiStatus.text = statusBuilder.toString().trim()
+            
+            val allSuccess = results.all { it.second }
             binding.tvApiStatus.setTextColor(
-                ContextCompat.getColor(this@SettingsActivity, if (isSuccess) R.color.success else R.color.error)
+                ContextCompat.getColor(this@SettingsActivity, if (allSuccess) R.color.success else R.color.warning)
             )
+        }
+    }
+
+    private fun setupDebugSection() {
+        binding.btnShowLogs.setOnClickListener {
+            val logs = DebugLogger.getRecentLogs(50)
+            if (logs.isEmpty()) {
+                binding.tvDebugLogs.text = "暂无日志"
+            } else {
+                binding.tvDebugLogs.text = logs.joinToString("\n")
+            }
+            
+            if (binding.tvDebugLogs.visibility == View.VISIBLE) {
+                binding.tvDebugLogs.visibility = View.GONE
+                binding.btnShowLogs.text = "显示日志"
+            } else {
+                binding.tvDebugLogs.visibility = View.VISIBLE
+                binding.btnShowLogs.text = "隐藏日志"
+            }
+        }
+
+        binding.btnClearLogs.setOnClickListener {
+            DebugLogger.clearLogs()
+            binding.tvDebugLogs.text = "日志已清空"
+            binding.tvDebugLogs.visibility = View.VISIBLE
         }
     }
 }

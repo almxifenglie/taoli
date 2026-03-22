@@ -4,15 +4,19 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.view.View
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.arbitrage.lofqdii.R
+import com.arbitrage.lofqdii.data.api.DataSourceInfo
+import com.arbitrage.lofqdii.data.api.FundDataResult
 import com.arbitrage.lofqdii.data.model.FundType
 import com.arbitrage.lofqdii.data.model.Result
 import com.arbitrage.lofqdii.data.model.SubscribeStatus
 import com.arbitrage.lofqdii.data.repository.FundRepository
 import com.arbitrage.lofqdii.databinding.ActivityFundDetailBinding
+import com.arbitrage.lofqdii.util.DebugLogger
 import kotlinx.coroutines.launch
 
 class FundDetailActivity : AppCompatActivity() {
@@ -53,12 +57,14 @@ class FundDetailActivity : AppCompatActivity() {
         binding.toolbar.setNavigationOnClickListener {
             finish()
         }
+        binding.toolbar.title = "基金详情 - $fundCode"
     }
 
     private fun loadFundDetail() {
         lifecycleScope.launch {
             showLoading()
-            val result = repository.getFundDetail(fundCode, fundType)
+            
+            val result = repository.getFundDetailWithSource(fundCode, fundType)
             hideLoading()
 
             when (result) {
@@ -73,10 +79,12 @@ class FundDetailActivity : AppCompatActivity() {
         }
     }
 
-    private fun showFundDetail(fund: com.arbitrage.lofqdii.data.model.Fund) {
+    private fun showFundDetail(dataResult: FundDataResult) {
+        val fund = dataResult.fund
+        
         binding.apply {
-            toolbar.title = fund.name
-            tvFundName.text = fund.name
+            toolbar.title = "${fund.name.ifEmpty { fundCode }} - $fundCode"
+            tvFundName.text = fund.name.ifEmpty { "加载中..." }
             tvFundCode.text = fund.code
 
             fund.t1PremiumRate?.let { rate ->
@@ -133,8 +141,75 @@ class FundDetailActivity : AppCompatActivity() {
             tvNavDate.text = fund.navDate ?: "--"
             tvUpdateTime.text = fund.updateTime ?: "--"
 
-            binding.btnRetry.setOnClickListener {
+            showDataSourceInfo(dataResult)
+
+            btnRetry.setOnClickListener {
                 loadFundDetail()
+            }
+            
+            btnShowLogs.setOnClickListener {
+                showDebugLogs()
+            }
+        }
+    }
+
+    private fun showDataSourceInfo(dataResult: FundDataResult) {
+        binding.apply {
+            val sourceInfo = StringBuilder()
+            
+            dataResult.priceSource?.let { info ->
+                val status = if (info.success) "成功" else "失败"
+                sourceInfo.append("价格来源: ${info.name} ($status)\n")
+                if (!info.success && info.errorMessage != null) {
+                    sourceInfo.append("  错误: ${info.errorMessage}\n")
+                }
+            }
+            
+            dataResult.navSource?.let { info ->
+                val status = if (info.success) "成功" else "失败"
+                sourceInfo.append("净值来源: ${info.name} ($status)\n")
+                if (!info.success && info.errorMessage != null) {
+                    sourceInfo.append("  错误: ${info.errorMessage}\n")
+                }
+            }
+            
+            dataResult.estimateNavSource?.let { info ->
+                val status = if (info.success) "成功" else "失败"
+                sourceInfo.append("估值来源: ${info.name} ($status)\n")
+                if (!info.success && info.errorMessage != null) {
+                    sourceInfo.append("  错误: ${info.errorMessage}\n")
+                }
+            }
+            
+            dataResult.subscribeSource?.let { info ->
+                val status = if (info.success) "成功" else "失败"
+                sourceInfo.append("申购状态: ${info.name} ($status)\n")
+                if (!info.success && info.errorMessage != null) {
+                    sourceInfo.append("  错误: ${info.errorMessage}\n")
+                }
+            }
+            
+            if (sourceInfo.isNotEmpty()) {
+                tvDataSourceInfo.text = sourceInfo.toString().trim()
+                tvDataSourceInfo.visibility = View.VISIBLE
+            } else {
+                tvDataSourceInfo.visibility = View.GONE
+            }
+        }
+    }
+
+    private fun showDebugLogs() {
+        val logs = DebugLogger.getRecentLogs(30)
+        val logText = logs.joinToString("\n")
+        
+        binding.apply {
+            if (tvDebugLogs.visibility == View.VISIBLE) {
+                tvDebugLogs.visibility = View.GONE
+                btnShowLogs.text = "显示日志"
+            } else {
+                tvDebugLogs.text = logText
+                tvDebugLogs.visibility = View.VISIBLE
+                btnShowLogs.text = "隐藏日志"
             }
         }
     }

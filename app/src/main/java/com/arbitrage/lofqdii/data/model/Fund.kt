@@ -16,7 +16,10 @@ data class Fund(
     val subscribeStatus: SubscribeStatus = SubscribeStatus.UNKNOWN,
     val subscribeLimit: Double? = null,
     val navDate: String? = null,
-    val updateTime: String? = null
+    val updateTime: String? = null,
+    val priceSource: String? = null,
+    val navSource: String? = null,
+    val subscribeSource: String? = null
 ) {
     val hasValidData: Boolean
         get() = marketPrice != null && nav != null
@@ -50,6 +53,15 @@ data class Fund(
             if (it <= 0) "无限额"
             else String.format("%.2f万", it / 10000)
         } ?: "--"
+
+    val displayDataSource: String
+        get() {
+            val sources = mutableListOf<String>()
+            if (priceSource != null) sources.add("价格:$priceSource")
+            if (navSource != null) sources.add("净值:$navSource")
+            if (subscribeSource != null) sources.add("申购:$subscribeSource")
+            return if (sources.isEmpty()) "--" else sources.joinToString(" ")
+        }
 
     private fun formatVolume(vol: Long): String {
         return when {

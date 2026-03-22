@@ -1,7 +1,9 @@
 package com.arbitrage.lofqdii.data.repository
 
+import android.util.Log
 import com.arbitrage.lofqdii.data.api.ApiSource
 import com.arbitrage.lofqdii.data.api.ApiSwitcher
+import com.arbitrage.lofqdii.data.api.FundDataResult
 import com.arbitrage.lofqdii.data.model.Fund
 import com.arbitrage.lofqdii.data.model.FundDetail
 import com.arbitrage.lofqdii.data.model.FundType
@@ -9,6 +11,7 @@ import com.arbitrage.lofqdii.data.model.Result
 import com.arbitrage.lofqdii.data.api.EastMoneyApi
 import com.arbitrage.lofqdii.data.api.TianTianFundApi
 import com.arbitrage.lofqdii.util.PremiumCalculator
+import com.arbitrage.lofqdii.util.DebugLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -25,6 +28,8 @@ class FundRepository private constructor() {
     private val tianTianFundApi = TianTianFundApi.getInstance()
 
     companion object {
+        private const val TAG = "FundRepository"
+
         @Volatile
         private var instance: FundRepository? = null
 
@@ -47,20 +52,27 @@ class FundRepository private constructor() {
         enrichPremium: Boolean = true
     ): Result<List<Fund>> = withContext(Dispatchers.IO) {
         try {
+            DebugLogger.i("开始获取LOF基金列表, page=$page, pageSize=$pageSize")
+            
             val listResult = apiSwitcher.getLOFList(page, pageSize)
             if (listResult.isError) {
+                DebugLogger.e("获取LOF列表失败: ${listResult.getErrorMessage()}")
                 return@withContext listResult
             }
 
             val funds = listResult.getOrNull() ?: return@withContext Result.error("获取列表失败")
+            DebugLogger.i("获取到 ${funds.size} 只LOF基金")
 
             if (enrichPremium) {
                 val enrichedFunds = enrichFundList(funds)
-                Result.success(enrichedFunds.sortedByDescending { it.t1PremiumRate })
+                val sortedFunds = enrichedFunds.sortedByDescending { it.t1PremiumRate }
+                DebugLogger.i("LOF基金数据增强完成，排序后返回")
+                Result.success(sortedFunds)
             } else {
                 Result.success(funds)
             }
         } catch (e: Exception) {
+            DebugLogger.e("获取LOF列表异常: ${e.message}", e)
             Result.error("获取LOF列表失败: ${e.message}", e)
         }
     }
@@ -71,25 +83,42 @@ class FundRepository private constructor() {
         enrichPremium: Boolean = true
     ): Result<List<Fund>> = withContext(Dispatchers.IO) {
         try {
+            DebugLogger.i("开始获取QDII基金列表, page=$page, pageSize=$pageSize")
+            
             val listResult = apiSwitcher.getQDIIList(page, pageSize)
             if (listResult.isError) {
+                DebugLogger.e("获取QDII列表失败: ${listResult.getErrorMessage()}")
                 return@withContext listResult
             }
 
             val funds = listResult.getOrNull() ?: return@withContext Result.error("获取列表失败")
+            DebugLogger.i("获取到 ${funds.size} 只QDII基金")
 
             if (enrichPremium) {
                 val enrichedFunds = enrichFundList(funds)
-                Result.success(enrichedFunds.sortedByDescending { it.t1PremiumRate })
+                val sortedFunds = enrichedFunds.sortedByDescending { it.t1PremiumRate }
+                DebugLogger.i("QDII基金数据增强完成，排序后返回")
+                Result.success(sortedFunds)
             } else {
                 Result.success(funds)
             }
         } catch (e: Exception) {
+            DebugLogger.e("获取QDII列表异常: ${e.message}", e)
             Result.error("获取QDII列表失败: ${e.message}", e)
         }
     }
 
     suspend fun getFundDetail(code: String, fundType: FundType): Result<Fund> {
+        val result = apiSwitcher.getFundWithPremium(code, fundType)
+        if (result.isError) {
+            return Result.error(result.getErrorMessage() ?: "获取失败")
+        }
+        val dataResult = result.getOrNull()!!
+        val fund = dataResult.fund
+        return Result.success(fund)
+    }
+
+    suspend fun getFundDetailWithSource(code: String, fundType: FundType): Result<FundDataResult> {
         return apiSwitcher.getFundWithPremium(code, fundType)
     }
 
@@ -114,16 +143,38 @@ class FundRepository private constructor() {
     }.flowOn(Dispatchers.IO)
 
     private suspend fun enrichFundList(funds: List<Fund>): List<Fund> = coroutineScope {
-        funds.map { fund ->
+        DebugLogger.i("开始增强 ${funds.size} 只基金数据...")
+        
+        funds.mapIndexed { index, fund ->
             async {
                 try {
+                    DebugLogger.d("[${fund.code}] 开始获取详情数据 (${index + 1}/${funds.size})")
                     val enrichedResult = apiSwitcher.getFundWithPremium(fund.code, fund.type)
-                    enrichedResult.getOrNull() ?: fund
+                    
+                    if (enrichedResult.isSuccess) {
+                        val dataResult = enrichedResult.getOrNull()!!
+                        val enrichedFund = dataResult.fund.copy(name = fund.name)
+                        
+                        DebugLogger.logDataResult(
+                            fund.code,
+                            dataResult.priceSource?.let { "${if (it.success) "成功" else "失败"}(${it.name})" },
+                            dataResult.navSource?.let { "${if (it.success) "成功" else "失败"}(${it.name})" },
+                            dataResult.subscribeSource?.let { "${if (it.success) "成功" else "失败"}(${it.name})" }
+                        )
+                        
+                        enrichedFund
+                    } else {
+                        DebugLogger.e("[${fund.code}] 获取详情失败: ${enrichedResult.getErrorMessage()}")
+                        fund
+                    }
                 } catch (e: Exception) {
+                    DebugLogger.e("[${fund.code}] 处理异常: ${e.message}", e)
                     fund
                 }
             }
-        }.awaitAll()
+        }.awaitAll().also {
+            DebugLogger.i("基金数据增强完成")
+        }
     }
 
     suspend fun searchFund(keyword: String, fundType: FundType?): Result<List<Fund>> = withContext(Dispatchers.IO) {

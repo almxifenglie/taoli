@@ -4,10 +4,12 @@ import android.util.Log
 import com.arbitrage.lofqdii.data.model.SubscribeStatus
 import com.arbitrage.lofqdii.data.model.Result
 import com.google.gson.Gson
+import com.google.gson.JsonObject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.logging.HttpLoggingInterceptor
 import java.util.concurrent.TimeUnit
 
 data class TianTianFundInfo(
@@ -22,16 +24,22 @@ data class TianTianFundInfo(
 
 class TianTianFundApi private constructor() {
 
+    private val loggingInterceptor = HttpLoggingInterceptor().apply {
+        level = HttpLoggingInterceptor.Level.BODY
+    }
+
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .writeTimeout(15, TimeUnit.SECONDS)
+        .addInterceptor(loggingInterceptor)
         .build()
 
     private val gson = Gson()
 
     companion object {
         private const val TAG = "TianTianFundApi"
+        private const val BASE_URL = "https://fundgz.1234567.com.cn"
 
         @Volatile
         private var instance: TianTianFundApi? = null
@@ -45,7 +53,7 @@ class TianTianFundApi private constructor() {
 
     suspend fun getFundEstimate(code: String): Result<TianTianFundInfo> = withContext(Dispatchers.IO) {
         try {
-            val url = "https://fundgz.1234567.com.cn/js/$code.js"
+            val url = "$BASE_URL/js/$code.js"
             Log.d(TAG, "Requesting: $url")
 
             val request = Request.Builder()
@@ -76,15 +84,15 @@ class TianTianFundApi private constructor() {
                 .trim()
 
             if (jsonStr.isEmpty() || jsonStr == "null") {
-                Log.e(TAG, "Invalid JSONP response")
-                return@withContext Result.error("Invalid JSONP response")
+                Log.e(TAG, "Invalid JSONP response: $body")
+                return@withContext Result.error("无效的JSONP响应")
             }
 
             val fundInfo = gson.fromJson(jsonStr, TianTianFundInfo::class.java)
 
             if (fundInfo.fundcode.isEmpty()) {
                 Log.e(TAG, "Invalid fund code in response")
-                return@withContext Result.error("Invalid fund code")
+                return@withContext Result.error("无效的基金代码")
             }
 
             Log.d(TAG, "Parsed fund: ${fundInfo.fundcode}, nav: ${fundInfo.dwjz}, estimate: ${fundInfo.gsz}")
@@ -105,7 +113,8 @@ class TianTianFundApi private constructor() {
             val info = result.getOrNull()!!
             val nav = info.dwjz.toDoubleOrNull()
             if (nav == null) {
-                return@withContext Result.error("Invalid nav value: ${info.dwjz}")
+                Log.e(TAG, "Invalid nav value: ${info.dwjz}")
+                return@withContext Result.error("无效的净值: ${info.dwjz}")
             }
 
             Log.d(TAG, "Got nav: $nav, date: ${info.jzrq}")
@@ -131,7 +140,7 @@ class TianTianFundApi private constructor() {
                 if (nav != null) {
                     return@withContext Result.success(Pair(nav, info.gztime))
                 }
-                return@withContext Result.error("Invalid estimate value")
+                return@withContext Result.error("无效的估算值")
             }
 
             Log.d(TAG, "Got estimate nav: $estimateNav, time: ${info.gztime}")
@@ -164,6 +173,11 @@ class TianTianFundApi private constructor() {
             val body = response.body?.string()
             if (body.isNullOrEmpty()) {
                 return@withContext Result.error("Empty response")
+            }
+
+            if (body.contains("location.href") || body.contains("window.location")) {
+                Log.w(TAG, "Page contains redirect script, not a valid fund page")
+                return@withContext Result.error("页面已重定向，非有效基金页面")
             }
 
             val status = parseSubscribeStatus(body)
