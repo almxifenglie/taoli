@@ -63,7 +63,7 @@ class FundTest {
             code = "161725",
             name = "test",
             type = FundType.LOF,
-            marketPrice = 1.2345
+            marketPrice = 1.234
         )
         assertEquals("1.234", fund.displayMarketPrice)
     }

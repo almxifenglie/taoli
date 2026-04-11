@@ -57,8 +57,8 @@ class PremiumCalculatorTest {
 
     @Test
     fun isPremiumOpportunity_customThreshold() {
-        assertTrue(PremiumCalculator.isPremiumOpportunity(2.5, 3.0))
-        assertFalse(PremiumCalculator.isPremiumOpportunity(2.5, 3.0).not())
+        assertFalse(PremiumCalculator.isPremiumOpportunity(2.5, 3.0))
+        assertTrue(PremiumCalculator.isPremiumOpportunity(3.5, 3.0))
     }
 
     @Test
