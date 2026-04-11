@@ -298,7 +298,7 @@ class EastMoneyApi private constructor() {
 
     suspend fun getSubscribeStatusFromF10(code: String): Result<Pair<SubscribeStatus, Double?>> = withContext(Dispatchers.IO) {
         try {
-            val url = "$FUND_F10_URL/jjfl_$code.html"
+            val url = "$FUND_F10_URL/fund_sgzt_$code.html"
             
             Log.d(TAG, "Fetching subscribe status from F10: $url")
             
