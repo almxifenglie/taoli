@@ -127,9 +127,15 @@ class ApiSwitcher private constructor() {
             }
 
             val subscribeF10Deferred = async {
-                Log.d(TAG, "[$code] 开始请求fundf10申购状态...")
+                Log.d(TAG, "[$code] 开始请求东方财富F10申购状态...")
                 val result = eastMoneyApi.getSubscribeStatusFromF10(code)
                 Pair(result, "EastMoney_F10")
+            }
+
+            val subscribeTianTianDeferred = async {
+                Log.d(TAG, "[$code] 开始请求天天基金申购状态...")
+                val result = tianTianFundApi.getSubscribeStatus(code)
+                Pair(result, "TianTian")
             }
 
             Log.d(TAG, "[$code] 等待所有数据返回...")
@@ -209,16 +215,26 @@ class ApiSwitcher private constructor() {
                 Log.e(TAG, "[$code] 所有估算净值源失败")
             }
 
-            val subscribeResult = subscribeF10Deferred.await()
-            if (subscribeResult.first.isSuccess) {
-                val data = subscribeResult.first.getOrNull()!!
+            val subscribeF10Result = subscribeF10Deferred.await()
+            val subscribeTianTianResult = subscribeTianTianDeferred.await()
+
+            if (subscribeF10Result.first.isSuccess) {
+                val data = subscribeF10Result.first.getOrNull()!!
                 subscribeStatus = data.first
                 subscribeLimit = data.second
-                subscribeSourceInfo = DataSourceInfo(subscribeResult.second, true)
-                Log.d(TAG, "[$code] 申购状态成功: status=$subscribeStatus, limit=$subscribeLimit")
+                subscribeSourceInfo = DataSourceInfo(subscribeF10Result.second, true)
+                Log.d(TAG, "[$code] 东方财富F10申购状态成功: status=$subscribeStatus, limit=$subscribeLimit")
+            } else if (subscribeTianTianResult.first.isSuccess) {
+                val data = subscribeTianTianResult.first.getOrNull()!!
+                subscribeStatus = data.first
+                subscribeLimit = data.second
+                subscribeSourceInfo = DataSourceInfo(subscribeTianTianResult.second, true)
+                Log.d(TAG, "[$code] 天天基金申购状态成功(备用): status=$subscribeStatus, limit=$subscribeLimit")
             } else {
-                subscribeSourceInfo = DataSourceInfo(subscribeResult.second, false, subscribeResult.first.getErrorMessage())
-                Log.e(TAG, "[$code] 申购状态失败: ${subscribeResult.first.getErrorMessage()}")
+                val f10Error = subscribeF10Result.first.getErrorMessage()
+                val ttError = subscribeTianTianResult.first.getErrorMessage()
+                subscribeSourceInfo = DataSourceInfo("Combined", false, "东方财富F10: $f10Error; 天天基金: $ttError")
+                Log.e(TAG, "[$code] 申购状态全部失败: 东方财富F10=$f10Error, 天天基金=$ttError")
             }
 
             val t1PremiumRate = PremiumCalculator.calculateT1PremiumRate(price, nav)

@@ -334,40 +334,46 @@ class EastMoneyApi private constructor() {
     }
 
     private fun parseSubscribeStatusFromHtml(html: String): SubscribeStatus {
+        val cleanHtml = html.replace("\\s".toRegex(), "").lowercase()
         return when {
-            html.contains("暂停申购") -> SubscribeStatus.CLOSED
-            html.contains("封闭期") -> SubscribeStatus.CLOSED
-            html.contains("限大额") -> SubscribeStatus.LIMITED
-            html.contains("限制申购") -> SubscribeStatus.LIMITED
-            html.contains("开放申购") -> SubscribeStatus.OPEN
-            html.contains("正常申购") -> SubscribeStatus.OPEN
+            cleanHtml.contains("暂停申购") || cleanHtml.contains("封闭期") -> SubscribeStatus.CLOSED
+            cleanHtml.contains("限大额") || cleanHtml.contains("限制申购") || cleanHtml.contains("限额申购") -> SubscribeStatus.LIMITED
+            cleanHtml.contains("开放申购") || cleanHtml.contains("正常申购") -> SubscribeStatus.OPEN
             else -> SubscribeStatus.UNKNOWN
         }
     }
 
     private fun parseSubscribeLimitFromHtml(html: String): Double? {
         try {
-            val limitPattern = Regex("""日累计申购限额[^<]*<td[^>]*>([^<]+)""")
-            val match = limitPattern.find(html)
-            if (match != null) {
-                val valueStr = match.groupValues[1].trim()
-                Log.d(TAG, "Found limit string: $valueStr")
-                
-                if (valueStr.contains("无限额") || valueStr == "---") {
-                    return null
-                }
-                
-                val numPattern = Regex("""([\d.]+)""")
-                val numMatch = numPattern.find(valueStr)
-                if (numMatch != null) {
-                    val value = numMatch.groupValues[1].toDoubleOrNull()
-                    if (value != null) {
-                        return if (valueStr.contains("万")) {
-                            value * 10000
-                        } else if (valueStr.contains("亿")) {
-                            value * 100000000
-                        } else {
-                            value
+            val patterns = listOf(
+                Regex("""日累计申购限额[^<]*<td[^>]*>([^<]+)"""),
+                Regex("""申购限额[^<]*<td[^>]*>([^<]+)"""),
+                Regex("""日购买限额[^<]*<td[^>]*>([^<]+)"""),
+                Regex("""购买限额[^<]*<td[^>]*>([^<]+)"""),
+                Regex("""限額[^<]*<td[^>]*>([^<]+)""", RegexOption.IGNORE_CASE)
+            )
+
+            for (pattern in patterns) {
+                val match = pattern.find(html)
+                if (match != null) {
+                    val valueStr = match.groupValues[1].trim()
+                    Log.d(TAG, "Found limit string with pattern ${pattern}: $valueStr")
+
+                    if (valueStr.contains("无限额") || valueStr.contains("---") || valueStr.contains("无限制")) {
+                        return null
+                    }
+
+                    val numPattern = Regex("""([\d.]+)""")
+                    val numMatch = numPattern.find(valueStr)
+                    if (numMatch != null) {
+                        val value = numMatch.groupValues[1].toDoubleOrNull()
+                        if (value != null) {
+                            return when {
+                                valueStr.contains("亿") -> value * 100000000
+                                valueStr.contains("万") -> value * 10000
+                                valueStr.contains("千") -> value * 1000
+                                else -> value
+                            }
                         }
                     }
                 }
