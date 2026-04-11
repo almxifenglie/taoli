@@ -187,6 +187,61 @@ class SinaFinanceApi private constructor() {
         }
     }
 
+    suspend fun getFundPriceAndVolume(code: String): Result<Pair<Double?, Long?>> = withContext(Dispatchers.IO) {
+        try {
+            val marketCode = if (code.startsWith("5") || code.startsWith("6")) "sh" else "sz"
+            val fullCode = "${marketCode}$code"
+            val url = "$BASE_URL/list=$fullCode"
+
+            Log.d(TAG, "Fetching price and volume for $code: $url")
+
+            val request = Request.Builder()
+                .url(url)
+                .header("Referer", "https://finance.sina.com.cn/")
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .get()
+                .build()
+
+            val response = client.newCall(request).execute()
+
+            if (!response.isSuccessful) {
+                Log.e(TAG, "HTTP error: ${response.code}")
+                return@withContext Result.error("HTTP ${response.code}")
+            }
+
+            val responseBody = response.body
+            if (responseBody == null) {
+                return@withContext Result.error("Empty response body")
+            }
+
+            val bytes = responseBody.bytes()
+            val body = String(bytes, Charset.forName("GBK"))
+
+            val content = body.substringAfter("\"").substringBefore("\"")
+            if (content.isEmpty()) {
+                return@withContext Result.error("No content")
+            }
+
+            val parts = content.split(",")
+            if (parts.size < 6) {
+                return@withContext Result.error("Invalid format")
+            }
+
+            var price = parts[3].toDoubleOrNull()
+            if (price == null || price == 0.0) {
+                price = parts[2].toDoubleOrNull()
+            }
+            
+            val volume = parts.getOrNull(8)?.toLongOrNull()
+
+            Log.d(TAG, "Price and volume for $code: price=$price, volume=$volume")
+            Result.success(Pair(price, volume))
+        } catch (e: Exception) {
+            Log.e(TAG, "getFundPriceAndVolume error for $code: ${e.message}", e)
+            Result.error("获取价格和成交量失败: ${e.message}", e)
+        }
+    }
+
     private fun parseSinaFundData(code: String, data: String): Fund? {
         try {
             val content = data.substringAfter("\"").substringBefore("\"")

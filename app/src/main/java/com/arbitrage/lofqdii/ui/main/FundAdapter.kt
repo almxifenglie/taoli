@@ -74,7 +74,7 @@ class FundAdapter(
                     SubscribeStatus.OPEN -> itemView.context.getString(R.string.subscribe_open)
                     SubscribeStatus.CLOSED -> itemView.context.getString(R.string.subscribe_closed)
                     SubscribeStatus.LIMITED -> itemView.context.getString(R.string.subscribe_limited)
-                    SubscribeStatus.UNKNOWN -> "--"
+                    SubscribeStatus.UNKNOWN -> ""
                 }
                 tvSubscribeStatus.text = statusText
 

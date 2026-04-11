@@ -202,17 +202,24 @@ class TianTianFundApi private constructor() {
 
     private fun parseSubscribeLimit(html: String): Double? {
         val patterns = listOf(
-            Regex("(\\d+(?:\\.\\d+)?)[\\s]*万元"),
-            Regex("(\\d+(?:\\.\\d+)?)[\\s]*万"),
-            Regex("限额[\\s]*(\\d+(?:\\.\\d+)?)")
+            Regex("""([\d.]+)\s*万元"""),
+            Regex("""限额\s*([\d.]+)\s*万"""),
+            Regex("""日累计申购限额[^\d]*([\d.]+)"""),
+            Regex("""申购限额[^\d]*([\d.]+)""")
         )
 
         for (pattern in patterns) {
             val match = pattern.find(html)
             if (match != null) {
+                val valueStr = match.value
                 val value = match.groupValues[1].toDoubleOrNull()
                 if (value != null) {
-                    return if (html.contains("万")) value * 10000 else value
+                    return when {
+                        valueStr.contains("亿") -> value * 100000000
+                        valueStr.contains("万") -> value * 10000
+                        valueStr.contains("千") -> value * 1000
+                        else -> value
+                    }
                 }
             }
         }
